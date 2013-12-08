@@ -179,15 +179,16 @@
     (get-150 "Your building loan matures - Collect $150")
     (get-100 "You have won a crossword competition - Collect $100")))
 
-;; a card-info is either
-;; - false, or
-;; - a symbol naming a card
+;; a travel-info is (make-travel-info roll maybe-card)
+;; representing how the player got here. Needed for utilities
+;; and some cards
+(struct travel-info (roll card))
 
 ;; a railroad is (make-railroad string)
 (struct railroad (name) #:transparent)
 
 ;; a utility is (utility string)
-(struct utility (name) )
+(struct utility (name) #:transparent)
 
 
 (define init-pmap
@@ -215,6 +216,8 @@
   (define the-space (hash-ref SPACEMAP posn))
   (cond [(railroad? the-space)
          (~a "the "(railroad-name the-space) " railroad")]
+        [(utility? the-space)
+         (~a "the "(utility-name the-space))]
         [(property? the-space)
          (property-name the-space)]
         [else (error 'space-name "unnamed space for posn ~s" posn)]))
@@ -233,6 +236,7 @@
         9 connecticut
         10 'jail
         11 st-charles
+        12 (utility "Electric Company")
         13 states
         14 virginia
         15 (railroad "Pennsylvania")
@@ -291,6 +295,41 @@
              #:when (rr-space? posn))
     posn))
 
+;; the next railroad reached by going forward at least 0 spaces
+;; posn -> posn
+(define (next-railroad posn)
+  (define rotated-railroad-posns
+    (for/list ([p RR-SPACES]) (modulo (- p posn) BOARD-SPACES)))
+  (modulo (+ posn (first (sort rotated-railroad-posns <)))
+          BOARD-SPACES))
+
+(check-equal? (next-railroad 5) 5)
+(check-equal? (next-railroad 6) 15)
+(check-equal? (next-railroad 38) 5)
+
+;; is this space a utility?
+;; index -> boolean
+(define (utility-space? posn)
+  (utility? (hash-ref SPACEMAP posn #f)))
+
+;; a list of the posns that are railroad spaces
+(define UTILITY-SPACES
+  (for/list ([posn BOARD-SPACES]
+             #:when (utility-space? posn))
+    posn))
+
+;; the next railroad reached by going forward at least 0 spaces
+;; posn -> posn
+(define (next-utility posn)
+  (define rotated-utility-posns
+    (for/list ([p UTILITY-SPACES]) (modulo (- p posn) BOARD-SPACES)))
+  (modulo (+ posn (first (sort rotated-utility-posns <)))
+          BOARD-SPACES))
+
+(check-equal? (next-utility 12) 12)
+(check-equal? (next-utility 13) 28)
+(check-equal? (next-utility 35) 12)
+
 ;; a map from colors to the spaces of that color
 (define COLORMAP
   (let ()
@@ -306,22 +345,6 @@
                  #:when (equal? color (property-color (hash-ref SPACEMAP i #f))))
         i))
     (values color properties))))
-
-;; move the player the given number of spaces, increase cash for
-;; passing GO if necessary. Assumes player is not in jail.
-;; player index -> player
-(define (move-player pl to)
-  (match-define (struct player (posn cash in-jail?)) pl)
-  (maybe-log-posn to)
-  (cond [(< to posn)
-         (player to (+ cash GO-BONUS) #f)]
-        [else
-         (player to cash #f)]))
-
-(check-equal? (move-player (player 38 1500 #f) 2)
-              (player 2 (+ 1500 GO-BONUS) #f))
-(check-equal? (move-player (player 24 1500 #f) 31)
-              (player 31 1500 #f))
 
 ;; take a turn.
 (define (take-turn gs roll-generator)
@@ -340,12 +363,17 @@
                 (maybe-transfer-to-bank 50 player-id gs)])]
         [else
          (let loop ([gs gs] [doubles-rolled 0])
+           ;; roll the dice
            (define roll (roll-generator))
+           ;; move the token, perform actions:
            (define gs2 (make-move gs (apply + roll)))
+           ;; was it doubles?
            (cond [(equal? (first roll) (second roll))
-                  (cond [(= doubles-rolled 2)
+                  (cond [(<= 2 doubles-rolled)
+                         ;; too many doubles, go to jail
                          (send-player-to-jail player-id gs2)]
                         [else
+                         ;; roll again
                          (loop gs2 (add1 doubles-rolled))])]
                  [else gs2]))]))
 
@@ -358,34 +386,35 @@
   (move-and-handle playerid 
                    (modulo (+ the-player-posn roll)
                            BOARD-SPACES)
-                   #f
+                   (travel-info roll #f)
                    gs))
 
 ;; move the player from one location to another, crediting them with GO-BONUS
-;; if they pass GO. card-info is a symbol if this move is as a result of that
+;; if they pass GO. travel-info will contain a symbol if this move is as a result of that
 ;; card
-;; id posn card-info gamestate -> gamestate
-(define (move-and-handle id to card-info gs)
+;; id posn travel-info gamestate -> gamestate
+(define (move-and-handle id to travel-info gs)
   (match-define (struct gamestate (id-vec turn pmap owner-map cards)) gs)
   (define new-player
     (move-player (hash-ref pmap id) to))
   (define gs2 (update-gamestate-pmap (hash-set pmap id new-player) gs))
-  (handle-landing card-info gs2))
+  (handle-landing travel-info gs2))
 
 
 ;; handle the player landing on a space
 ;; gamestate chance-info -> gamestate
-(define (handle-landing card-info gs)
+(define (handle-landing travel-info gs)
   (match-define (struct gamestate (id-vec turn pmap owner-map cards)) gs)
   (define playerid (vector-ref id-vec turn))
   (define new-posn (player-posn (hash-ref pmap playerid)))
   (define the-space (hash-ref SPACEMAP new-posn #f))
   (cond [(or (property? the-space)
-             (railroad? the-space))
+             (railroad? the-space)
+             (utility? the-space))
          (define space-owner (hash-ref owner-map new-posn #f))
          (cond [(and space-owner (not (equal? space-owner playerid)))
                 ;; pay rent to the owner or fold
-                (maybe-transfer-money (rent-owed new-posn card-info gs)
+                (maybe-transfer-money (rent-owed new-posn travel-info gs)
                                       playerid
                                       space-owner
                                       gs)]
@@ -400,36 +429,43 @@
         [(equal? the-space 'luxury-tax)
          (maybe-transfer-to-bank LUXURY-TAX-COST playerid gs)]
         [(equal? the-space 'chance)
-         (handle-chance playerid gs)]
+         (handle-chance playerid travel-info gs)]
         [else
          gs]))
 
 ;; handle a "chance" card
-(define (handle-chance id gs)
+;; id travel-info gamestate -> gamestate
+(define (handle-chance id ti gs)
   (match-define (struct gamestate (id-vec turn pmap omap (list chance-cards cc-cards))) gs)
   (define playerid (vector-ref id-vec turn))
   (define this-card (first chance-cards))
   (define new-card-decks (list (append (rest chance-cards) (list this-card)) cc-cards))
   (define gs2 (gamestate id-vec turn pmap omap new-card-decks))
-  (define (to-posn posn) (move-and-handle playerid posn this-card gs2))
-  gs2
+  (define ti2 (travel-info (travel-info-roll ti) this-card))
+  (define player-current-posn (player-posn (hash-ref pmap playerid)))
+  (define (to-posn posn) (move-and-handle playerid posn ti2 gs2))
   (match this-card
     ['go-to-go (to-posn GO-POSN)]
     ['go-to-illinois (to-posn ILLINOIS-POSN)]
     ['go-to-st-charles (to-posn ST-CHARLES-POSN)]
     ['go-to-reading (to-posn READING-RR-POSN)]
-    #;['go-to-utility (to-posn (nearest-utility playerid gs2))]
+    ['go-to-utility (to-posn (next-utility player-current-posn))]
+    ['go-to-rr (to-posn (next-railroad player-current-posn))]
+    ['get-50 (transfer-from-bank 50 playerid gs2)]
+    ;; unimplemented: 'goojf
+    ;; untested:
+    ['go-back-3 (to-posn (modulo (- player-current-posn 3) BOARD-SPACES))]
+    ;; untested
+    ['go-to-jail (send-player-to-jail playerid gs2)]
+    ;; unimplemented: 'general-repairs
+    ;; untested
+    ['pay-15 (maybe-transfer-to-bank 15 playerid gs2)]
+    ;
     [other gs2]))
 
 
 #;(
-    (go-to-utility "Advance token to nearest Utility. If unowned, you may buy it from the Bank. If owned, throw dice and pay owner a total ten times the amount thrown.")
-    (go-to-rr "Advance token to the nearest Railroad and pay owner twice the rental to which he/she is otherwise entitled. If Railroad is unowned, you may buy it from the Bank.")
-    (go-to-rr "Advance token to the nearest Railroad and pay owner twice the rental to which he/she is otherwise entitled. If Railroad is unowned, you may buy it from the Bank.")
-    (get-50 "Bank pays you dividend of $50")
     (goojf "Get out of Jail Free - This card may be kept until needed, or traded/sold")
-    (go-back-3 "Go Back 3 Spaces")
-    (go-to-jail "Go to Jail - Go directly to Jail - Do not pass Go, do not collect $200")
     (general-repairs "Make general repairs on all your property - For each house pay $25 - For each hotel $100")
     (pay-15 "Pay poor tax of $15")
     (go-to-reading "Take a trip to Reading Railroad - If you pass Go, collect $200")
@@ -533,10 +569,10 @@
 
 ;; how much rent is owed on this space?
 ;; index card-info gamestate -> integer
-(define (rent-owed posn card gs)
+(define (rent-owed posn travel-info gs)
   (define owner-map (gamestate-owner-map gs))
   (define the-owner (hash-ref owner-map posn))
-  (define rr-mult (cond [(equal? card 'go-to-rr) 2]
+  (define rr-mult (cond [(equal? (travel-info-card travel-info) 'go-to-rr) 2]
                         [else 1]))
   (cond [(rr-space? posn)
          (* rr-mult
@@ -548,6 +584,11 @@
               [other (error 'rent-owed
                             "internal error: unexpected # of rrs owned by one player: ~v"
                             other)]))]
+        [(utility-space? posn)
+         (define rent-mult
+           (cond [(eq? (travel-info-card travel-info) 'go-to-utility) 10]
+                 [else 4]))
+         (* rent-mult (travel-info-roll travel-info))]
         [else 
          (define the-property (hash-ref SPACEMAP posn))
          (cond [(has-monopoly-on-color the-owner 
@@ -620,10 +661,14 @@
                   (values k v)))
   (gamestate tvec turn pmap omap2 cards))
 
-
+;; transfer cash from a player to the bank
 (define (transfer-to-bank cash from state)
   (match-define (struct gamestate (tvec turn pmap omap cards)) state)
   (update-gamestate-pmap (change-cash pmap from (- cash)) state))
+
+;; transfer cash from the bank to a player
+(define (transfer-from-bank cash from state)
+  (transfer-to-bank (- cash) from state))
 
 ;; change the amount of cash by a given amount.
 ;; playermap id integer -> playermap
@@ -654,11 +699,27 @@
              omap
              cards))
 
+;; move the player the given number of spaces, increase cash for
+;; passing GO if necessary. Assumes player is not in jail.
+;; player index -> player
+(define (move-player pl to)
+  (match-define (struct player (posn cash in-jail?)) pl)
+  (maybe-log-posn to)
+  (cond [(< to posn)
+         (player to (+ cash GO-BONUS) #f)]
+        [else
+         (player to cash #f)]))
+
 
 ;;
 ;; TEST CASES
 ;;
 
+
+(check-equal? (move-player (player 38 1500 #f) 2)
+              (player 2 (+ 1500 GO-BONUS) #f))
+(check-equal? (move-player (player 24 1500 #f) 31)
+              (player 31 1500 #f))
 ;; a convenience function to preserve old test cases
 (define (gamestate1 id-vec turn player-map owner-map)
   (gamestate id-vec turn player-map owner-map init-card-decks))
@@ -751,41 +812,52 @@
 
 ;; RENT-OWED 
 
+(define test-travel-info (travel-info 3 #f))
+
 (check-equal? (rrs-owned-by (id 3) (hash 5 (id 1) 15 (id 3) 34 (id 0) 35 (id 3)))
               2)
 
+(check-equal? (rent-owed 28 (travel-info 9 #f)
+                         (gamestate1 (vector (id 3) (id 4))
+                                    0
+                                    (hash)
+                                    (hash 28 (id 4))))
+              (* 9 4))
+
 (check-equal? (rent-owed 15
-                         #f
+                         test-travel-info
                          (gamestate1 (vector (id 3))
                                     0
                                     (hash)
                                     (hash 15 (id 3))))
               25)
-(check-equal? (rent-owed 15 #f (gamestate1 (vector (id 3))
-                                       0
-                                       (hash)
-                                       (hash 15 (id 3) 25 (id 3))))
+(check-equal? (rent-owed 15 test-travel-info
+                         (gamestate1 (vector (id 3))
+                                     0
+                                     (hash)
+                                     (hash 15 (id 3) 25 (id 3))))
               50)
 (check-equal? (rent-owed 15
-                         'go-to-rr
+                         (travel-info 3 'go-to-rr)
                          (gamestate1 (vector (id 3))
                                      0
                                      (hash)
                                      (hash 15 (id 3) 25 (id 3))))
               100)
-(check-equal? (rent-owed 15 #f (gamestate1 (vector (id 3))
-                                       0
-                                       (hash)
-                                       (hash 15 (id 3) 5 (id 3) 25 (id 3))))
+(check-equal? (rent-owed 15 test-travel-info
+                         (gamestate1 (vector (id 3))
+                                     0
+                                     (hash)
+                                     (hash 15 (id 3) 5 (id 3) 25 (id 3))))
               100)
-(check-equal? (rent-owed 15 #f
+(check-equal? (rent-owed 15 test-travel-info
                          (gamestate1 (vector (id 3))
                                        0
                                        (hash)
                                        (hash 15 (id 3) 25 (id 3) 35 (id 3) 5 (id 3))))
               200)
 
-(check-equal? (rent-owed 24 #f
+(check-equal? (rent-owed 24 test-travel-info
                          (gamestate1 (vector (id 3))
                                      0 
                                      (hash)
@@ -1002,10 +1074,13 @@
                           (hash 25 (id 1) 5 (id 1) 15 (id 9)
                                 26 (id 1) 27 (id 1) 29 (id 1))))
 
+
+;; CHANCE CARDS
+
 ;; player 9 draws the "take a ride on the reading" chance card, moves
 ;; there and collects $200, pays owner $50:
 (check-equal? (handle-landing
-               'go-to-reading
+               (travel-info 3 #f)
                (gamestate (vector (id 1) (id 9) (id 25))
                           1
                           (hash (id 1) (player 12 1234 #f)
@@ -1031,6 +1106,125 @@
                                  'go-to-reading)
                                 (list))))
 
+;; player 9 lands on the water works, buys it
+(check-equal? (handle-landing
+               (travel-info 3 #f)
+               (gamestate (vector (id 1) (id 9) (id 25))
+                          1
+                          (hash (id 1) (player 12 1234 #f)
+                                (id 2) (player 23 0 #f)
+                                (id 9) (player 28 428 #f)
+                                (id 25) (player 0 4423 #f))
+                          (hash 25 (id 1) 5 (id 1) 15 (id 9)
+                                26 (id 1) 27 (id 1) 29 (id 1))
+                          (list empty empty)))
+              (gamestate (vector (id 1) (id 9) (id 25))
+                          1
+                          (hash (id 1) (player 12 1234 #f)
+                                (id 2) (player 23 0 #f)
+                                (id 9) (player 28 (- 428 150) #f)
+                                (id 25) (player 0 4423 #f))
+                          (hash 25 (id 1) 5 (id 1) 15 (id 9)
+                                26 (id 1) 27 (id 1) 29 (id 1)
+                                28 (id 9))
+                          (list empty empty)))
+
+;; player 9 lands on the water works, pays player 1 4x
+(check-equal? (handle-landing
+               (travel-info 3 #f)
+               (gamestate (vector (id 1) (id 9) (id 25))
+                          1
+                          (hash (id 1) (player 12 1234 #f)
+                                (id 2) (player 23 0 #f)
+                                (id 9) (player 28 428 #f)
+                                (id 25) (player 0 4423 #f))
+                          (hash 25 (id 1) 5 (id 1) 15 (id 9)
+                                26 (id 1) 27 (id 1) 29 (id 1)
+                                28 (id 1))
+                          (list empty empty)))
+              (gamestate (vector (id 1) (id 9) (id 25))
+                          1
+                          (hash (id 1) (player 12 (+ 1234 12) #f)
+                                (id 2) (player 23 0 #f)
+                                (id 9) (player 28 (- 428 12) #f)
+                                (id 25) (player 0 4423 #f))
+                          (hash 25 (id 1) 5 (id 1) 15 (id 9)
+                                26 (id 1) 27 (id 1) 29 (id 1)
+                                28 (id 1))
+                          (list empty empty)))
+
+;; player 9 draws go-to-utility, pays player 1 10x
+(check-equal? (handle-landing
+               (travel-info 3 #f)
+               (gamestate (vector (id 1) (id 9) (id 25))
+                          1
+                          (hash (id 1) (player 12 1234 #f)
+                                (id 2) (player 23 0 #f)
+                                (id 9) (player 22 428 #f)
+                                (id 25) (player 0 4423 #f))
+                          (hash 25 (id 1) 5 (id 1) 15 (id 9)
+                                26 (id 1) 27 (id 1) 29 (id 1)
+                                28 (id 1))
+                          (list (list 'go-to-utility 'bogus) empty)))
+              (gamestate (vector (id 1) (id 9) (id 25))
+                          1
+                          (hash (id 1) (player 12 (+ 1234 30) #f)
+                                (id 2) (player 23 0 #f)
+                                (id 9) (player 28 (- 428 30) #f)
+                                (id 25) (player 0 4423 #f))
+                          (hash 25 (id 1) 5 (id 1) 15 (id 9)
+                                26 (id 1) 27 (id 1) 29 (id 1)
+                                28 (id 1))
+                          (list (list 'bogus 'go-to-utility) empty)))
+
+;; player 9 draws go-to-rr, pays player 1 2x
+(check-equal? (handle-landing
+               (travel-info 3 #f)
+               (gamestate (vector (id 1) (id 9) (id 25))
+                          1
+                          (hash (id 1) (player 12 1234 #f)
+                                (id 2) (player 23 0 #f)
+                                (id 9) (player 22 428 #f)
+                                (id 25) (player 0 4423 #f))
+                          (hash 25 (id 1) 5 (id 1) 15 (id 9)
+                                26 (id 1) 27 (id 1) 29 (id 1)
+                                28 (id 1))
+                          (list (list 'go-to-rr 'bogus) empty)))
+              (gamestate (vector (id 1) (id 9) (id 25))
+                          1
+                          (hash (id 1) (player 12 (+ 1234 100) #f)
+                                (id 2) (player 23 0 #f)
+                                (id 9) (player 25 (- 428 100) #f)
+                                (id 25) (player 0 4423 #f))
+                          (hash 25 (id 1) 5 (id 1) 15 (id 9)
+                                26 (id 1) 27 (id 1) 29 (id 1)
+                                28 (id 1))
+                          (list (list 'bogus 'go-to-rr) empty)))
+
+;; transfer-from-bank
+(check-equal? (transfer-from-bank 
+               50 
+               (id 9)
+               (gamestate (vector (id 1) (id 9) (id 25))
+                          1
+                          (hash (id 1) (player 12 1234 #f)
+                                (id 2) (player 23 0 #f)
+                                (id 9) (player 22 428 #f)
+                                (id 25) (player 0 4423 #f))
+                          (hash 25 (id 1) 5 (id 1) 15 (id 9)
+                                26 (id 1) 27 (id 1) 29 (id 1)
+                                28 (id 1))
+                          (list (list 'go-to-rr 'bogus) empty)))
+              (gamestate (vector (id 1) (id 9) (id 25))
+                          1
+                          (hash (id 1) (player 12 1234 #f)
+                                (id 2) (player 23 0 #f)
+                                (id 9) (player 22 (+ 50 428) #f)
+                                (id 25) (player 0 4423 #f))
+                          (hash 25 (id 1) 5 (id 1) 15 (id 9)
+                                26 (id 1) 27 (id 1) 29 (id 1)
+                                28 (id 1))
+                          (list (list 'go-to-rr 'bogus) empty)))
 ;; 
 
 
