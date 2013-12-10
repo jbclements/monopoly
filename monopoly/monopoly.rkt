@@ -36,7 +36,7 @@
 
 ;; functional-update of prmap
 ;; id (prmap -> prmap) state -> state
-(define (gamestate-update-prmap prmap-thunk state)
+(define (update-gamestate-prmap prmap-thunk state)
   (match-define (struct gamestate (tvec turn pmap prmap cards)) state)
   (gamestate tvec turn pmap (prmap-thunk prmap) cards))
 
@@ -82,86 +82,85 @@
 
 ;; a property is (make-property nat nat nat nat nat nat nat nat nat symbol)
 (struct property (name list-price
-                       rent
-                       rent-1h
-                       rent-2h
-                       rent-3h
-                       rent-4h
-                       rent-hotel
+                       rent-vec
                        house-cost
                        color))
 
+;; convenience function... changed the data definition.
+(define (make-property name list-price rent0 rent1 rent2 rent3 rent4 rent5 house-cost color)
+  (property name list-price (vector rent0 rent1 rent2 rent3 rent4 rent5) house-cost color))
+
 (define mediterranean
-  (property "Mediterranean Avenue"
+  (make-property "Mediterranean Avenue"
             60 2 10 30 90 160 250 50 'purple))
 (define baltic
-  (property "Baltic Avenue"
+  (make-property "Baltic Avenue"
             60 4 20 60 180 320 450 50 'purple))
 
 (define oriental
-  (property "Oriental Avenue"
+  (make-property "Oriental Avenue"
             100 6 30 90 270 400 550 50 'lightblue))
 (define vermont
-  (property "Vermont Avenue"
+  (make-property "Vermont Avenue"
             100 6 30 90 270 400 550 50 'lightblue))
 (define connecticut
-  (property "Connecticut Avenue"
+  (make-property "Connecticut Avenue"
             120 8 40 100 300 450 600 50 'lightblue))
 
 (define st-charles
-  (property "St. Charles Place"
+  (make-property "St. Charles Place"
             140 10 50 150 450 625 750 100 'violet))
 (define states 
-  (property "States Avenue"
+  (make-property "States Avenue"
             140 10 50 150 450 625 750 100 'violet))
 (define virginia
-  (property "Virginia Avenue"
+  (make-property "Virginia Avenue"
             160 12 60 180 500 700 900 100 'violet))
 
 (define st-james
-  (property "St. James Place"
+  (make-property "St. James Place"
             180 14 70 200 550 750 950 100 'orange))
 (define tennessee
-  (property "Tennessee Avenue"
+  (make-property "Tennessee Avenue"
             180 14 70 200 550 750 950 100 'orange))
 (define new-york
-  (property "New York Avenue"
+  (make-property "New York Avenue"
             200 16 80 220 600 800 1000 100 'orange))
 
 (define indiana
-  (property "Indiana Avenue"
+  (make-property "Indiana Avenue"
             220 18 90 250 700 875 1050 150 'red))
 (define kentucky
-  (property "Kentucky Avenue"
+  (make-property "Kentucky Avenue"
             220 18 90 250 700 875 1050 150 'red))
 (define illinois 
-  (property "Illinois Avenue"
+  (make-property "Illinois Avenue"
             240 20 100 300 750 925 1100 150 'red))
 
 (define atlantic
-  (property "Atlantic Avenue"
+  (make-property "Atlantic Avenue"
             260 22 110 330 800 975 1150 150 'yellow))
 (define ventnor
-  (property "Ventnor Avenue"
+  (make-property "Ventnor Avenue"
             260 22 110 330 800 975 1150 150 'yellow))
 (define marvin
-  (property "Marvin Gardens"
+  (make-property "Marvin Gardens"
             280 24 120 360 850 1025 1200 150 'yellow))
 (define pacific
-  (property "Pacific Avenue"
+  (make-property "Pacific Avenue"
             300 26 130 390 900 1100 1275 200 'green))
 (define no-carolina
-  (property "North Carolina Avenue"
+  (make-property "North Carolina Avenue"
             300 26 130 390 900 1100 1275 200 'green))
 (define pennsylvania
-  (property "Pennsylvania Avenue"
+  (make-property "Pennsylvania Avenue"
             300 28 150 450 1000 1200 1400 200 'green))
 
 (define park
-  (property "Park Place"
+  (make-property "Park Place"
             350 35 175 500 1100 1300 1500 200 'blue))
 (define boardwalk
-  (property "Boardwalk" 
+  (make-property "Boardwalk" 
             400 50 200 600 1400 1700 2000 200 'blue))
 
 
@@ -532,13 +531,13 @@
   (define player (hash-ref pmap (vector-ref tvec turn)))
   (cond [(< (posn-list-price (player-posn player))
             (player-cash player))
-         (buy-property player state)]
+         (buy-property state)]
         [else
          state]))
 
 ;; buy the property for the player, decreasing cash by the property's list price
 ;; state -> state
-(define (buy-property player gs)
+(define (buy-property gs)
   (match-define (struct gamestate (tvec turn pmap prmap cards)) gs)
   (define player-id (gamestate-pturn gs))
   (define posn (player-posn (hash-ref pmap player-id)))
@@ -553,6 +552,20 @@
     (display (~a " ... and now has a monopoly!\n")))
   (gamestate tvec turn pmap2 prmap2 cards))
 
+;; buy a house. assume it's possible
+;; id posn gamestate -> gamestate
+(define (buy-house owner posn state)
+  (update-gamestate-prmap
+   ;; must take money, too
+   (lambda (prmap)
+     (match-define (struct property-state (pr-owner houses))
+       (hash-ref prmap posn))
+     (unless (equal? owner pr-owner)
+       (raise-argument-error 'buy-house (~a "owner of property "posn)
+                             0 owner posn state))
+     (hash-set prmap posn (property-state owner (add1 houses))))
+   state))
+
 ;; a hash-set where the old val must be #f
 (define (hash-safe-set map key val)
   (when (hash-ref map key #f)
@@ -563,7 +576,7 @@
 ;; transfer all properties owned by player a to player b
 ;; state -> state
 (define (transfer-properties-from-player a b state)
-  (gamestate-update-prmap 
+  (update-gamestate-prmap 
    (lambda (prmap)
      (for/hash ([(k v) (in-hash prmap)])
        (cond [(equal? (property-state-owner v) a)
@@ -598,7 +611,7 @@
 ;; index card-info gamestate -> integer
 (define (rent-owed posn travel-info gs)
   (define property-map (gamestate-property-map gs))
-  (match-define (struct property-state (the-owner _)) (hash-ref property-map posn))
+  (match-define (struct property-state (the-owner houses)) (hash-ref property-map posn))
   (define rr-mult (cond [(equal? (travel-info-card travel-info) 'go-to-rr) 2]
                         [else 1]))
   (cond [(rr-space? posn)
@@ -618,11 +631,14 @@
          (* rent-mult (travel-info-roll travel-info))]
         [else 
          (define the-property (hash-ref SPACEMAP posn))
-         (cond [(has-monopoly-on-color the-owner 
-                                       (property-color the-property)
-                                       property-map)
-                (* 2 (property-rent the-property))]
-               [else (property-rent the-property)])]))
+         (define rent-vec (property-rent-vec the-property))
+         (define multiplier 
+           (cond [(and (= houses 0)
+                       (has-monopoly-on-color the-owner 
+                                              (property-color the-property)
+                                              property-map)) 2]
+                 [else 1]))
+         (* multiplier (vector-ref (property-rent-vec the-property) houses))]))
 
 
 
@@ -632,7 +648,10 @@
 ;; index property-map -> index
 (define (rrs-owned-by player-num property-map)
   (for/sum ([posn RR-SPACES]
-            #:when (equal? player-num (hash-ref property-map posn #f)))
+            #:when (equal? player-num
+                           (property-state-owner
+                            (hash-ref property-map posn
+                                      (property-state #f #f)))))
     1))
 
 ;; how many properties of this color does this player own?
@@ -675,7 +694,7 @@
 ;; remove ownership from these properties
 ;; player-id state -> state
 (define (un-own-properties owner state)
-  (gamestate-update-prmap
+  (update-gamestate-prmap
    (lambda (prmap)
      (for/hash ([(k v) prmap]
                            #:when (not (equal? (property-state-owner v) owner)))
@@ -741,13 +760,3 @@
     (values k (property-state v 0))))
 
 
-(check-equal? (rent-owed 27 (travel-info 4 #f)
-                         (gamestate (vector (id 3) (id 4))
-                                     0
-                                     (vector (player 27 1234 #f)
-                                             (player 1 1500 #f))
-                                     (hash 27 (property-state (id 4) 2)
-                                           26 (property-state (id 4) 2) 
-                                           29 (property-state (id 4) 2))
-                                     (list empty empty)))
-              330)

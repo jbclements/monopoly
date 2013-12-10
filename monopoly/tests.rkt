@@ -8,6 +8,7 @@
 ;;
 
 
+
 (check-equal? (move-player (player 38 1500 #f) 2 #t)
               (player 2 (+ 1500 GO-BONUS) #f))
 (check-equal? (move-player (player 24 1500 #f) 31 #t)
@@ -107,7 +108,20 @@
 
 (define test-travel-info (travel-info 3 #f))
 
-(check-equal? (rrs-owned-by (id 3) (hash 5 (id 1) 15 (id 3) 34 (id 0) 35 (id 3)))
+(check-equal? (rent-owed 27 (travel-info 4 #f)
+                         (gamestate (vector (id 3) (id 4))
+                                     0
+                                     (vector (player 27 1234 #f)
+                                             (player 1 1500 #f))
+                                     (hash 27 (property-state (id 4) 2)
+                                           26 (property-state (id 4) 2) 
+                                           29 (property-state (id 4) 2))
+                                     (list empty empty)))
+              330)
+
+(check-equal? (rrs-owned-by (id 3) 
+                            (make-prmap
+                             (hash 5 (id 1) 15 (id 3) 34 (id 0) 35 (id 3))))
               2)
 
 (check-equal? (rent-owed 28 (travel-info 9 #f)
@@ -193,8 +207,7 @@
 
 
 ;; player 3 buys property successfully
-(check-equal? (buy-property (id 3)
-                            (gamestate1 init-tvec
+(check-equal? (buy-property (gamestate1 init-tvec
                                        3
                                        (hash (id 0) (player 0 1500 #f)
                                              (id 1) (player 0 1500 #f)
@@ -209,8 +222,7 @@
                                (id 3) (player 24 (- 1500 240) #f))
                          (hash 24 (id 3))))
 
-(check-equal? (buy-property (id 3)
-                            (gamestate1 init-tvec
+(check-equal? (buy-property (gamestate1 init-tvec
                                        3
                                        (hash (id 0) (player 0 1500 #f)
                                              (id 1) (player 0 1500 #f)
@@ -567,11 +579,23 @@
 
 (check-equal? (has-monopoly-on-color (id 4)
                                      'yellow
-                                     (hash 29 (id 4) 27 (id 4)
-                                           26 (id 4)))
+                                     (make-prmap
+                                      (hash 29 (id 4) 27 (id 4)
+                                            26 (id 4))))
               true)
 (check-equal? (has-monopoly-on-color (id 4)
                                      'yellow
-                                     (hash 29 (id 4) 27 (id 3)
-                                           26 (id 4)))
+                                     (make-prmap
+                                      (hash 29 (id 4) 27 (id 3)
+                                            26 (id 4))))
               false)
+
+(check-equal? (buy-house 31
+                         (gamestate (vector (id 0)) 1
+                                    (hash (id 0) (player 13 1234 #f))
+                                    (hash 31 (property-state (id 0) 1))
+                                    (list empty empty)))
+              (gamestate (vector (id 0)) 1
+                         (hash (id 0) (player 13 (- 1234 150) #f))
+                         (hash 31 (property-state (id 0) 2))
+                         (list empty empty)))
