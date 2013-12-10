@@ -592,11 +592,13 @@
 
 ;; RENT AND MONOPOLIES
 
-;; how much rent is owed on this space?
+;; how much rent is owed on this space? 
+;; assumes the lander is not the owner
+;; assumes the space is owned
 ;; index card-info gamestate -> integer
 (define (rent-owed posn travel-info gs)
   (define property-map (gamestate-property-map gs))
-  (define the-owner (hash-ref property-map posn))
+  (match-define (struct property-state (the-owner _)) (hash-ref property-map posn))
   (define rr-mult (cond [(equal? (travel-info-card travel-info) 'go-to-rr) 2]
                         [else 1]))
   (cond [(rr-space? posn)
@@ -624,6 +626,8 @@
 
 
 
+
+
 ;; how many railroads does this player own?
 ;; index property-map -> index
 (define (rrs-owned-by player-num property-map)
@@ -634,7 +638,9 @@
 ;; how many properties of this color does this player own?
 (define (has-monopoly-on-color player-id color property-map)
   (for/and ([posn (in-list (hash-ref COLORMAP color))])
-    (equal? player-id (hash-ref property-map posn #f))))
+    (equal? player-id 
+            (property-state-owner
+             (hash-ref property-map posn (property-state #f #f))))))
 
 ;; transfer money from one player to another
 ;; integer id id gamestate -> gamestate
@@ -733,3 +739,15 @@
 (define (make-prmap old-style-hash)
   (for/hash ([(k v) (in-hash old-style-hash)])
     (values k (property-state v 0))))
+
+
+(check-equal? (rent-owed 27 (travel-info 4 #f)
+                         (gamestate (vector (id 3) (id 4))
+                                     0
+                                     (vector (player 27 1234 #f)
+                                             (player 1 1500 #f))
+                                     (hash 27 (property-state (id 4) 2)
+                                           26 (property-state (id 4) 2) 
+                                           29 (property-state (id 4) 2))
+                                     (list empty empty)))
+              330)

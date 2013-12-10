@@ -12,6 +12,7 @@
               (player 2 (+ 1500 GO-BONUS) #f))
 (check-equal? (move-player (player 24 1500 #f) 31 #t)
               (player 31 1500 #f))
+
 ;; a convenience function to preserve old test cases
 (define (gamestate1 id-vec turn player-map prmap)
   (gamestate id-vec turn player-map (make-prmap prmap) init-card-decks))
