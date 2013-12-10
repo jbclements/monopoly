@@ -14,9 +14,6 @@
 (check-equal? (move-player (player 24 1500 #f) 31 #t)
               (player 31 1500 #f))
 
-;; a convenience function to preserve old test cases
-(define (gamestate1 id-vec turn player-map prmap)
-  (gamestate id-vec turn player-map (make-prmap prmap) init-card-decks))
 
 (check-equal? (remove-player (id 0) init-state)
               (gamestate1 (vector (id 1) (id 2) (id 3))
@@ -172,6 +169,7 @@
               20)
 
 ;; BUY-PROPERTY
+
 
 (check-equal? (maybe-buy-property (gamestate1 init-tvec
                                              3
@@ -590,12 +588,12 @@
                                             26 (id 4))))
               false)
 
-(check-equal? (buy-house 31
+(check-equal? (buy-house (id 0) 31
                          (gamestate (vector (id 0)) 1
                                     (hash (id 0) (player 13 1234 #f))
                                     (hash 31 (property-state (id 0) 1))
                                     (list empty empty)))
               (gamestate (vector (id 0)) 1
-                         (hash (id 0) (player 13 (- 1234 150) #f))
+                         (hash (id 0) (player 13 (- 1234 200) #f))
                          (hash 31 (property-state (id 0) 2))
                          (list empty empty)))

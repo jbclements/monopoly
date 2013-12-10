@@ -80,7 +80,7 @@
 ;; - ...
 
 
-;; a property is (make-property nat nat nat nat nat nat nat nat nat symbol)
+;; a property is (make-property string nat (vector nat nat nat nat nat nat) nat symbol)
 (struct property (name list-price
                        rent-vec
                        house-cost
@@ -146,6 +146,7 @@
 (define marvin
   (make-property "Marvin Gardens"
             280 24 120 360 850 1025 1200 150 'yellow))
+
 (define pacific
   (make-property "Pacific Avenue"
             300 26 130 390 900 1100 1275 200 'green))
@@ -541,30 +542,38 @@
   (match-define (struct gamestate (tvec turn pmap prmap cards)) gs)
   (define player-id (gamestate-pturn gs))
   (define posn (player-posn (hash-ref pmap player-id)))
-  (define pmap2 (change-cash pmap player-id (- (posn-list-price posn))))
-  (define prmap2 (hash-safe-set prmap posn 
-                                (property-state player-id 0)))
+  (define gs2
+    (update-gamestate-player
+     player-id (player-change-cash (- (posn-list-price posn)))
+     (update-gamestate-prmap
+      (lambda (prmap)
+        (hash-safe-set prmap posn 
+                       (property-state player-id 0)))
+      gs)))
   (display (~a "player "(id-v player-id)" purchases "(space-name posn)".\n"))
   (when (and (property? (hash-ref SPACEMAP posn))
              (has-monopoly-on-color player-id
                                     (property-color (hash-ref SPACEMAP posn))
-                                    prmap2))
+                                    (gamestate-property-map gs2)))
     (display (~a " ... and now has a monopoly!\n")))
-  (gamestate tvec turn pmap2 prmap2 cards))
+  gs2)
 
 ;; buy a house. assume it's possible
 ;; id posn gamestate -> gamestate
 (define (buy-house owner posn state)
-  (update-gamestate-prmap
-   ;; must take money, too
-   (lambda (prmap)
-     (match-define (struct property-state (pr-owner houses))
-       (hash-ref prmap posn))
-     (unless (equal? owner pr-owner)
-       (raise-argument-error 'buy-house (~a "owner of property "posn)
-                             0 owner posn state))
-     (hash-set prmap posn (property-state owner (add1 houses))))
-   state))
+  (display (~a "player "(id-v owner)" purchases a house on property "posn".\n"))
+  (update-gamestate-player
+   owner
+   (player-change-cash (- (property-house-cost (hash-ref SPACEMAP posn))))
+   (update-gamestate-prmap
+    (lambda (prmap)
+      (match-define (struct property-state (pr-owner houses))
+        (hash-ref prmap posn))
+      (unless (equal? owner pr-owner)
+        (raise-argument-error 'buy-house (~a "owner of property "posn)
+                              0 owner posn state))
+      (hash-set prmap posn (property-state owner (add1 houses))))
+    state)))
 
 ;; a hash-set where the old val must be #f
 (define (hash-safe-set map key val)
@@ -664,15 +673,11 @@
 ;; transfer money from one player to another
 ;; integer id id gamestate -> gamestate
 (define (transfer-money cash from to state)
-  (match-define (struct gamestate (tvec turn playermap property-map cards)) state)
-  (define playermap2 
-    (change-cash playermap from (- cash)))
-  (define playermap3 (change-cash playermap2 to cash))
-  (gamestate tvec
-             turn
-             playermap3
-             property-map
-             cards))
+  (update-gamestate-player 
+   from (player-change-cash (- cash))
+   (update-gamestate-player
+    to (player-change-cash cash)
+    state)))
 
 ;; transfer money to the bank
 ;; integer id gamestate -> gamestate
@@ -697,24 +702,22 @@
   (update-gamestate-prmap
    (lambda (prmap)
      (for/hash ([(k v) prmap]
-                           #:when (not (equal? (property-state-owner v) owner)))
-                  (values k v)))
+                #:when (not (equal? (property-state-owner v) owner)))
+       (values k v)))
    state))
 
 ;; transfer cash from a player to the bank
 (define (transfer-to-bank cash from state)
-  (match-define (struct gamestate (tvec turn pmap prmap cards)) state)
-  (update-gamestate-pmap (change-cash pmap from (- cash)) state))
+  (update-gamestate-player from (player-change-cash (- cash)) state))
 
 ;; transfer cash from the bank to a player
 (define (transfer-from-bank cash from state)
   (transfer-to-bank (- cash) from state))
 
-;; change the amount of cash by a given amount.
-;; playermap id integer -> playermap
-(define (change-cash pmap id cash)
-  (match-define (struct player (pposn pcash in-jail?)) (hash-ref pmap id))
-  (hash-set pmap id (player pposn (+ cash pcash) in-jail?)))
+;; change the player's cash
+;; nat -> player -> player 
+(define ((player-change-cash change) p)
+  (player (player-posn p) (+ change (player-cash p)) (player-in-jail? p)))
 
 ;; the price of a property or railroad
 ;; posn -> nat
@@ -758,5 +761,10 @@
 (define (make-prmap old-style-hash)
   (for/hash ([(k v) (in-hash old-style-hash)])
     (values k (property-state v 0))))
+
+
+;; a convenience function to preserve old test cases
+(define (gamestate1 id-vec turn player-map prmap)
+  (gamestate id-vec turn player-map (make-prmap prmap) init-card-decks))
 
 
