@@ -1,14 +1,17 @@
 #lang racket
 
 (require "monopoly.rkt"
-         rackunit)
+         rackunit
+         rackunit/text-ui)
 
 ;;
 ;; TEST CASES
 ;;
 
-
-
+(run-tests
+(test-suite
+ "monopoly tests"
+(let ()
 (check-equal? (move-player (player 38 1500 #f) 2 #t)
               (player 2 (+ 1500 GO-BONUS) #f))
 (check-equal? (move-player (player 24 1500 #f) 31 #t)
@@ -573,6 +576,41 @@
               )
 
 
+;; COMMUNITY CHEST CARDS
+(check-equal? (handle-card (id 3) (travel-info 3 #f) 'go-to-go
+                           (gamestate (vector (id 0) (id 3) (id 9))
+                                      1
+                                      (hash (id 0) (player 13 1234 #t)
+                                            (id 3) (player 17 2987 #f)
+                                            (id 9) (player 18 223 #f))
+                                      (hash)
+                                      (list empty empty)))
+              (gamestate (vector (id 0) (id 3) (id 9))
+                         1
+                         (hash (id 0) (player 13 1234 #t)
+                               (id 3) (player 0 3187 #f)
+                               (id 9) (player 18 223 #f))
+                         (hash)
+                         (list empty empty)))
+
+
+(check-equal? (handle-community-chest 
+               (id 3) (travel-info 3 #f)
+               (gamestate (vector (id 0) (id 3) (id 9))
+                          1
+                          (hash (id 0) (player 13 1234 #t)
+                                (id 3) (player 17 2987 #f)
+                                (id 9) (player 18 223 #f))
+                          (hash)
+                          (list empty (list 'go-to-go 'bogus))))
+              (gamestate (vector (id 0) (id 3) (id 9))
+                         1
+                         (hash (id 0) (player 13 1234 #t)
+                               (id 3) (player 0 3187 #f)
+                               (id 9) (player 18 223 #f))
+                         (hash)
+                         (list empty (list 'bogus 'go-to-go))))
+
 
 
 (check-equal? (has-monopoly-on-color (id 4)
@@ -597,3 +635,30 @@
                          (hash (id 0) (player 13 (- 1234 200) #f))
                          (hash 31 (property-state (id 0) 2))
                          (list empty empty)))
+
+(check-equal? (properties-of-color 'red)
+              (list 21 23 24))
+
+(check-equal? (all-the-same '(a a b a)) #f)
+(check-equal? (all-the-same '(a a a a)) #t)
+  
+(check-equal? (some-player-has-a-monopoly?
+               (gamestate
+                (vector (id 0))
+                1
+                (hash)
+                (make-prmap
+                 (hash 16 (id 0) 5 (id 0) 18 (id 0) 19 (id 0)))
+                (list empty empty)))
+              #t)
+  (check-equal? (some-player-has-a-monopoly?
+                 (gamestate
+                  (vector (id 0))
+                  1
+                  (hash)
+                  (make-prmap
+                   (hash 16 (id 0) 5 (id 0) 18 (id 1) 19 (id 0)))
+                  (list empty empty)))
+                #f)
+  
+  )))

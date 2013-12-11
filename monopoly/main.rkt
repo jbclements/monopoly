@@ -8,8 +8,28 @@
 
 (printf "\nstarting game!\n\n")
 
-(define ABORT-TURN 50000)
+(define ABORT-TURN 1000000)
 
+(define (natural-monopoly?)
+ (let loop ([turn 0]
+            [gs init-state])
+   (define next-state (take-turn gs roll))
+   (cond [(< (vector-length (gamestate-id-vec gs)) 4)
+          'player-died]
+         [(some-player-has-a-monopoly? gs)
+          'natural-monopoly]
+         [(all-properties-owned? gs)
+          'no-natural-monopoly]
+         [else
+          (loop (add1 turn)
+                (next-turn next-state))])))
+
+(for/fold ([ht (hash)]) ((i 400))
+  (define result (natural-monopoly?))
+  (hash-set ht result (add1 (hash-ref ht result 0))))
+
+
+#|
 (reset-posn-log)
 
 (time
@@ -23,6 +43,7 @@
           (display (~a "game ends after "turn" turns\n"))
           next-state]
          [else (loop (add1 turn) (next-turn next-state))])))
+
 
 (plot-posn-distr posn-log)
 
@@ -69,3 +90,4 @@
   (vector 37 (ivl 0.02178624515216449 0.022133141557206377))
   (vector 38 (ivl 0.02177806988901168 0.022124902920732284))
   (vector 39 (ivl 0.02180112833979826 0.022148140084277988))))
+|#

@@ -40,6 +40,12 @@
   (match-define (struct gamestate (tvec turn pmap prmap cards)) state)
   (gamestate tvec turn pmap (prmap-thunk prmap) cards))
 
+;; functional-update of cards
+;; id card-decks state -> state
+(define (update-gamestate-cards new-decks state)
+  (match-define (struct gamestate (tvec turn pmap prmap cards)) state)
+  (gamestate tvec turn pmap prmap new-decks))
+
 ;; whose turn is it?
 ;; state -> id
 (define (gamestate-pturn gs)
@@ -308,16 +314,26 @@
 (define ST-CHARLES-POSN (find-posn st-charles))
 (define JAIL-POSN (find-posn 'jail))
 (define BOARDWALK-POSN (find-posn boardwalk))
+(define COLORS (remove-duplicates
+                (for/list ([p (in-hash-values SPACEMAP)]
+                           #:when (property? p))
+                  (property-color p))))
 
 ;; is this space a railroad?
 ;; index -> boolean
 (define (rr-space? posn)
-  (railroad? (hash-ref SPACEMAP posn #f)))
+  (railroad? (hash-ref SPACEMAP posn)))
 
 ;; a list of the posns that are railroad spaces
 (define RR-SPACES
   (for/list ([posn BOARD-SPACES]
              #:when (rr-space? posn))
+    posn))
+
+(define OWNABLE-SPACES
+  (for/list ([posn BOARD-SPACES]
+             #:when (or (rr-space? posn) 
+                        (property? (hash-ref SPACEMAP posn))))
     posn))
 
 ;; the next railroad reached by going forward at least 0 spaces
@@ -465,40 +481,68 @@
 ;; handle a "chance" card
 ;; id travel-info gamestate -> gamestate
 (define (handle-chance id ti gs)
-  (match-define (struct gamestate (id-vec turn pmap prmap (list chance-cards cc-cards))) gs)
-  (define playerid (vector-ref id-vec turn))
+  (match-define (list chance-cards cc-cards) (gamestate-cards gs))
+  ;(match-define (struct gamestate (id-vec turn pmap prmap (list chance-cards cc-cards))) gs)
   (define this-card (first chance-cards))
+  ;; THIS WON'T WORK FOR GOOJF:
   (define new-card-decks (list (append (rest chance-cards) (list this-card)) cc-cards))
-  (define gs2 (gamestate id-vec turn pmap prmap new-card-decks))
-  (define ti2 (travel-info (travel-info-roll ti) this-card))
-  (define player-current-posn (player-posn (hash-ref pmap playerid)))
-  (define (to-posn posn) (move-and-handle playerid posn ti2 gs2))
-  (match this-card
+  (define gs2 (update-gamestate-cards new-card-decks gs))
+  (handle-card id ti this-card gs2))
+
+;; handle a "community chest" card
+;; id travel-info gamestate -> gamestate
+(define (handle-community-chest id ti gs)
+  (match-define (list chance-cards cc-cards) (gamestate-cards gs))
+  ;(match-define (struct gamestate (id-vec turn pmap prmap (list chance-cards cc-cards))) gs)
+  (define this-card (first cc-cards))
+  ;; THIS WON'T WORK FOR GOOJF:
+  (define new-card-decks (list chance-cards (append (rest cc-cards) (list this-card))))
+  (define gs2 (update-gamestate-cards new-card-decks gs))
+  (handle-card id ti this-card gs2))
+
+;; handle any card
+;; id travel-info card state -> state
+(define (handle-card id ti card gs)
+  (define ti2 (travel-info (travel-info-roll ti) card))
+  (define player-current-posn (player-posn (hash-ref (gamestate-player-map gs) id)))
+  (define (to-posn posn) (move-and-handle id posn ti2 gs))
+  (match card
     ['go-to-go (to-posn GO-POSN)]
     ['go-to-illinois (to-posn ILLINOIS-POSN)]
     ['go-to-st-charles (to-posn ST-CHARLES-POSN)]
     ['go-to-reading (to-posn READING-RR-POSN)]
     ['go-to-utility (to-posn (next-utility player-current-posn))]
     ['go-to-rr (to-posn (next-railroad player-current-posn))]
-    ['get-50 (transfer-from-bank 50 playerid gs2)]
     ;; unimplemented: 'goojf
     ['go-back-3 (to-posn (modulo (- player-current-posn 3) BOARD-SPACES))]
-    ;; untested
-    ['go-to-jail (send-player-to-jail playerid gs2)]
+    ['go-to-jail (send-player-to-jail id gs)]
     ;; unimplemented: 'general-repairs
     ;; untested
-    ['pay-15 (maybe-transfer-to-bank 15 playerid gs2)]
+    ['pay-15 (maybe-transfer-to-bank 15 id gs)]
+    ['pay-50 (maybe-transfer-to-bank 50 id gs)]
+    ['pay-100 (maybe-transfer-to-bank 100 id gs)]
+    ['pay-150 (maybe-transfer-to-bank 150 id gs)]
     ['go-to-boardwalk (to-posn BOARDWALK-POSN)]
-    ['get-150 (transfer-from-bank 150 playerid gs2)]
-    ['get-100 (transfer-from-bank 100 playerid gs2)]
-    [other gs2]))
+    ['go-to-go (to-posn GO-POSN)]
+    ['get-10 (transfer-from-bank 10 id gs)]
+    ['get-20 (transfer-from-bank 20 id gs)]
+    ['get-25 (transfer-from-bank 25 id gs)]
+    ['get-50 (transfer-from-bank 50 id gs)]
+    ['get-100 (transfer-from-bank 100 id gs)]
+    ['get-150 (transfer-from-bank 150 id gs)]
+    ['get-200 (transfer-from-bank 150 id gs)]
+    [other gs]))
 
-
+#;((goojf "Get Out of Jail Free")
+    (get-50-from-each "Grand Opera Night - Collect $50 from every player for opening night seats")
+    (get-10-from-each "It is your birthday - Collect $10 from each player")
+    (street-repairs "You are assessed for street repairs - $40 per house - $115 per hotel"))
 #;(
     (goojf "Get out of Jail Free - This card may be kept until needed, or traded/sold")
     (general-repairs "Make general repairs on all your property - For each house pay $25 - For each hotel $100")
     (pay-50-to-each "You have been elected Chairman of the Board - Pay each player $50")
     )
+
 
 ;; send the player to jail
 ;; id gamestate -> gamestate
@@ -669,6 +713,37 @@
     (equal? player-id 
             (property-state-owner
              (hash-ref property-map posn (property-state #f #f))))))
+
+;; does some player have a monopoly?
+(define (some-player-has-a-monopoly? gs)
+  (define prmap (gamestate-property-map gs))
+  (for/or ([color COLORS])
+    (define owners-of-color
+      (for/list ([posn (properties-of-color color)])
+        (property-state-owner 
+         (hash-ref prmap posn (property-state #f #f)))))
+    (and (not (false? (first owners-of-color)))
+         (all-the-same owners-of-color))))
+
+;; all the properties of a given color
+;; color -> list-of-posns
+(define (properties-of-color color)
+  (for/list ([(posn p) (in-hash SPACEMAP)]
+             #:when (and (property? p)
+                         (equal? color (property-color p))))
+    posn))
+
+;; are all the values in the (non-empty) list the same?
+(define (all-the-same l)
+  (for/and ([elt (rest l)]) 
+    (equal? elt (first l))))
+
+;; are all of the ownable properties owned?
+;; state -> boolean
+(define (all-properties-owned? state)
+  (define prmap (gamestate-property-map state))
+  (for/and ([posn (in-list OWNABLE-SPACES)])
+    (hash-ref prmap posn #f)))
 
 ;; transfer money from one player to another
 ;; integer id id gamestate -> gamestate
