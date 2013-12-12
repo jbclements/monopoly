@@ -23,6 +23,22 @@
 ;; a player is (player byte integer)
 (struct player (posn cash in-jail?) #:prefab)
 
+;; free actions may be taken at "any time" (whatever that turns out to mean)
+;; a free action is one of:
+;; - (buy-house/a posn)
+;; - (sell-house/a posn)
+;; - (mortgage/a posn)
+;; - (unmortgage/a posn
+;; - (try-exchange/a bundle bundle)
+(struct buy-house/a (posn))
+(struct sell-house/a (posn))
+(struct mortgage/a (posn))
+(struct unmortgage/a (posn))
+(struct try-exchange/a (offered requested))
+
+;; a bundle is (bundle number list-of-posns)
+(struct bundle (cash properties))
+
 ;; functional update of pmap in gamestate
 (define (update-gamestate-pmap new-pmap state)
   (match-define (struct gamestate (tvec turn pmap prmap cards)) state)
