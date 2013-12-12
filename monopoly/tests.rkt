@@ -108,36 +108,52 @@
 
 (define test-travel-info (travel-info 3 #f))
 
-(check-equal? (rent-owed 27 (travel-info 4 #f)
-                         (gamestate (vector (id 3) (id 4))
-                                     0
-                                     (vector (player 27 1234 #f)
-                                             (player 1 1500 #f))
-                                     (hash 27 (property-state (id 4) 2)
-                                           26 (property-state (id 4) 2) 
-                                           29 (property-state (id 4) 2))
-                                     (list empty empty)))
-              330)
+  ;; player lands on space with 2 houses
+  (check-equal? (rent-owed 27 (travel-info 4 #f)
+                           (gamestate (vector (id 3) (id 4))
+                                      0
+                                      (vector (player 27 1234 #f)
+                                              (player 1 1500 #f))
+                                      (hash 27 (property-state (id 4) 2)
+                                            26 (property-state (id 4) 3)
+                                            29 (property-state (id 4) 2))
+                                      (list empty empty)))
+                330)
+  
+  ;; player lands on mortgaged property
+  (check-equal? (rent-owed 27 (travel-info 4 #f)
+                           (gamestate (vector (id 3) (id 4))
+                                      0
+                                      (vector (player 27 1234 #f)
+                                              (player 1 1500 #f))
+                                      (hash 27 (property-state (id 4) 'mortgaged)
+                                            26 (property-state (id 4) 1)
+                                            29 (property-state (id 4) 1))
+                                      (list empty empty)))
+                0)
 
 (check-equal? (rrs-owned-by (id 3) 
                             (make-prmap
                              (hash 5 (id 1) 15 (id 3) 34 (id 0) 35 (id 3))))
               2)
 
-(check-equal? (rent-owed 28 (travel-info 9 #f)
-                         (gamestate1 (vector (id 3) (id 4))
-                                    0
-                                    (hash)
-                                    (hash 28 (id 4))))
-              (* 9 4))
+  ;; player lands on utility
+  (check-equal? (rent-owed 28 (travel-info 9 #f)
+                           (gamestate1 (vector (id 3) (id 4))
+                                       0
+                                       (hash)
+                                       (hash 28 (id 4))))
+                (* 9 4))
 
-(check-equal? (rent-owed 15
-                         test-travel-info
-                         (gamestate1 (vector (id 3))
-                                    0
-                                    (hash)
-                                    (hash 15 (id 3))))
-              25)
+  ;; player lands on railroad
+  (check-equal? (rent-owed 15
+                           test-travel-info
+                           (gamestate1 (vector (id 3))
+                                       0
+                                       (hash)
+                                       (hash 15 (id 3))))
+                25)
+  
 (check-equal? (rent-owed 15 test-travel-info
                          (gamestate1 (vector (id 3))
                                      0
@@ -164,12 +180,15 @@
                                        (hash 15 (id 3) 25 (id 3) 35 (id 3) 5 (id 3))))
               200)
 
-(check-equal? (rent-owed 24 test-travel-info
-                         (gamestate1 (vector (id 3))
-                                     0 
-                                     (hash)
-                                     (hash 24 (id 3))))
-              20)
+  ;; player lands on normal space
+  (check-equal? (rent-owed 24 test-travel-info
+                           (gamestate1 (vector (id 3))
+                                       0 
+                                       (hash)
+                                       (hash 24 (id 3))))
+                20)
+  
+  
 
 ;; BUY-PROPERTY
 

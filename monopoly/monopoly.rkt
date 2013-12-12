@@ -10,8 +10,9 @@
 ;; newtyping this to help avoid bugs in transition....
 (struct id (v) #:transparent)
 
-;; a property-state is (property-state id nat)
+;; a property-state is (property-state id nat-or-mortgaged)
 ;; representing the owner and the number of houses on the property
+;; when the property is mortgaged, the number of houses is 'mortgaged
 (struct property-state (owner houses) #:transparent)
 
 ;; an property-map is a map from index -> property-state, representing a map
@@ -681,33 +682,35 @@
 (define (rent-owed posn travel-info gs)
   (define property-map (gamestate-property-map gs))
   (match-define (struct property-state (the-owner houses)) (hash-ref property-map posn))
-  (define rr-mult (cond [(equal? (travel-info-card travel-info) 'go-to-rr) 2]
+  (cond [(eq? houses 'mortgaged) 0]
+        [else
+         (define rr-mult (cond [(equal? (travel-info-card travel-info) 'go-to-rr) 2]
+                               [else 1]))
+         (cond [(rr-space? posn)
+                (* rr-mult
+                   (match (rrs-owned-by the-owner property-map)
+                     [1 25]
+                     [2 50]
+                     [3 100]
+                     [4 200]
+                     [other (error 'rent-owed
+                                   "internal error: unexpected # of rrs owned by one player: ~v"
+                                   other)]))]
+               [(utility-space? posn)
+                (define rent-mult
+                  (cond [(eq? (travel-info-card travel-info) 'go-to-utility) 10]
+                        [else 4]))
+                (* rent-mult (travel-info-roll travel-info))]
+               [else 
+                (define the-property (hash-ref SPACEMAP posn))
+                (define rent-vec (property-rent-vec the-property))
+                (define multiplier 
+                  (cond [(and (= houses 0)
+                              (has-monopoly-on-color the-owner 
+                                                     (property-color the-property)
+                                                     property-map)) 2]
                         [else 1]))
-  (cond [(rr-space? posn)
-         (* rr-mult
-            (match (rrs-owned-by the-owner property-map)
-              [1 25]
-              [2 50]
-              [3 100]
-              [4 200]
-              [other (error 'rent-owed
-                            "internal error: unexpected # of rrs owned by one player: ~v"
-                            other)]))]
-        [(utility-space? posn)
-         (define rent-mult
-           (cond [(eq? (travel-info-card travel-info) 'go-to-utility) 10]
-                 [else 4]))
-         (* rent-mult (travel-info-roll travel-info))]
-        [else 
-         (define the-property (hash-ref SPACEMAP posn))
-         (define rent-vec (property-rent-vec the-property))
-         (define multiplier 
-           (cond [(and (= houses 0)
-                       (has-monopoly-on-color the-owner 
-                                              (property-color the-property)
-                                              property-map)) 2]
-                 [else 1]))
-         (* multiplier (vector-ref (property-rent-vec the-property) houses))]))
+                (* multiplier (vector-ref (property-rent-vec the-property) houses))])]))
 
 
 
@@ -804,6 +807,11 @@
 ;; transfer cash from the bank to a player
 (define (transfer-from-bank cash from state)
   (transfer-to-bank (- cash) from state))
+
+;; ACTIONS
+
+#;(define (mortgage-property id posn state))
+
 
 ;; change the player's cash
 ;; nat -> player -> player 
