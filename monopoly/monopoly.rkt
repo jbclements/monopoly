@@ -637,18 +637,6 @@
     (display (~a " ... and now has a monopoly!\n")))
   gs2)
 
-;; buy a house. assume it's possible
-;; id posn gamestate -> gamestate
-(define (buy-house owner posn state)
-  (display (~a "player "(id-v owner)" purchases a house on property "posn".\n"))
-  (update-gamestate-player
-   owner
-   (player-change-cash (- (property-house-cost (hash-ref SPACEMAP posn))))
-   (update-gamestate-property
-    posn (lambda (property)
-           (match-define (struct property-state (pr-owner houses)) property)
-           (property-state owner (add1 houses)))
-    state)))
 
 ;; a hash-set where the old val must be #f
 (define (hash-safe-set map key val)
@@ -863,6 +851,43 @@
    (update-gamestate-player
     id (player-change-cash (- (* (property-list-price (hash-ref SPACEMAP posn)) 6/10)))
     state)))
+
+
+;; UNTESTED!
+;; can this player buy a house on this property?
+;; id posn gamestate -> boolean
+(define (can-buy-house? owner posn state)
+  (define ps (hash-ref (gamestate-property-map state) posn #f))
+  (define p (hash-ref (gamestate-player-map state) id))
+  (define prop (hash-ref SPACEMAP posn))
+  (and (property? prop)
+       (equal? (property-state-owner ps) id)
+       (let ()
+         (define other-props
+           (remove (properties-of-color (property-color prop)) posn))
+         (define houses-on-this-property (property-state-houses ps))
+         (and (not (eq? houses-on-this-property 'mortgaged))
+              (for/and ([posn other-props])
+                (define houses-on-that-property 
+                  (property-state-houses (hash-ref (gamestate-property-map state)
+                                                   posn)))
+                (and (not (eq? houses-on-that-property 'mortgaged)
+                          (<= houses-on-this-property 
+                              houses-on-that-property))))))))
+
+;; buy a house. assume it's possible
+;; id posn gamestate -> gamestate
+(define (buy-house owner posn state)
+  (display (~a "player "(id-v owner)" purchases a house on property "posn".\n"))
+  (update-gamestate-player
+   owner
+   (player-change-cash (- (property-house-cost (hash-ref SPACEMAP posn))))
+   (update-gamestate-property
+    posn (lambda (property)
+           (match-define (struct property-state (pr-owner houses)) property)
+           (property-state owner (add1 houses)))
+    state)))
+
 
 
 ;; change the player's cash
