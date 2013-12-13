@@ -680,4 +680,89 @@
                   (list empty empty)))
                 #f)
   
+  ;; ACTIONS
+
+  ;; CAN-MORTGAGE-PROPERTY?
+  (check-equal? (can-mortgage-property? (id 0) 21
+                                   (gamestate (vector (id 0))
+                                              1
+                                              (hash (id 0) (player 23 1234 #f))
+                                              (hash 19 (property-state (id 0) 0)
+                                                    21 (property-state (id 0) 0))
+                                              (list empty empty)))
+                #t)
+  (check-equal? (can-mortgage-property? (id 0) 21
+                                   (gamestate (vector (id 0))
+                                              1
+                                              (hash (id 0) (player 23 1234 #f))
+                                              (hash 19 (property-state (id 0) 0)
+                                                    21 (property-state (id 0) 1))
+                                              (list empty empty)))
+                #f)
+  (check-equal? (can-mortgage-property? (id 0) 21
+                                   (gamestate (vector (id 0))
+                                              1
+                                              (hash (id 0) (player 23 1234 #f))
+                                              (hash 19 (property-state (id 0) 0))
+                                              (list empty empty)))
+                #f)
+  
+  (check-equal? (mortgage-property (id 0) 21
+                                   (gamestate (vector (id 0))
+                                              1
+                                              (hash (id 0) (player 23 1234 #f))
+                                              (hash 19 (property-state (id 0) 0)
+                                                    21 (property-state (id 0) 0))
+                                              (list empty empty)))
+                (gamestate (vector (id 0))
+                           1
+                           (hash (id 0) (player 23 (+ 1234 110) #f))
+                           (hash 19 (property-state (id 0) 0)
+                                 21 (property-state (id 0) 'mortgaged))
+                           (list empty empty)))
+  
+  (check-equal? (can-un-mortgage-property?
+                 (id 0) 21
+                 (gamestate (vector (id 0))
+                            1
+                            (hash (id 0) (player 23 (+ 1234 110) #f))
+                            (hash 19 (property-state (id 0) 0)
+                                  21 (property-state (id 0) 'mortgaged))
+                            (list empty empty)))
+                #t)
+  (check-equal? (can-un-mortgage-property?
+                 (id 0) 21
+                 (gamestate (vector (id 0))
+                            1
+                            (hash (id 0) (player 23 (+ 1234 110) #f))
+                            (hash 19 (property-state (id 0) 0)
+                                  21 (property-state (id 0) 0))
+                            (list empty empty)))
+                #f)
+  (check-equal? (can-un-mortgage-property?
+                 (id 0) 21
+                 (gamestate (vector (id 0))
+                            1
+                            (hash (id 0) (player 23 79 #f))
+                            (hash 19 (property-state (id 0) 0)
+                                  21 (property-state (id 0) 'mortgaged))
+                            (list empty empty)))
+                #f)
+  (check-equal? (un-mortgage-property 
+                 (id 0) 21
+                 (gamestate (vector (id 0))
+                            1
+                            (hash (id 0) (player 23 (+ 1234 110) #f))
+                            (hash 19 (property-state (id 0) 0)
+                                  21 (property-state (id 0) 'mortgaged))
+                            (list empty empty)))
+                (gamestate (vector (id 0))
+                            1
+                            (hash (id 0) (player 23 (- 1234 22) #f))
+                            (hash 19 (property-state (id 0) 0)
+                                  21 (property-state (id 0) 0))
+                            (list empty empty))
+                )
+  
+  
   )))

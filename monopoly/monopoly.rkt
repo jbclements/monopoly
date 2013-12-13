@@ -57,6 +57,12 @@
   (match-define (struct gamestate (tvec turn pmap prmap cards)) state)
   (gamestate tvec turn pmap (prmap-thunk prmap) cards))
 
+;; functional update of player
+;; id (player->player) state -> state
+(define (update-gamestate-property posn property-thunk state)
+  (update-gamestate-prmap 
+   (lambda (prmap) (hash-set prmap posn (property-thunk (hash-ref prmap posn #f)))) state))
+
 ;; functional-update of cards
 ;; id card-decks state -> state
 (define (update-gamestate-cards new-decks state)
@@ -347,10 +353,16 @@
              #:when (rr-space? posn))
     posn))
 
+;; is this posn an ownable space?
+(define (ownable-posn? posn)
+  (define space (hash-ref SPACEMAP posn))
+  (or (railroad? space)
+      (utility? space)
+      (property? space)))
+
 (define OWNABLE-SPACES
   (for/list ([posn BOARD-SPACES]
-             #:when (or (rr-space? posn) 
-                        (property? (hash-ref SPACEMAP posn))))
+             #:when (ownable-posn? posn))
     posn))
 
 ;; the next railroad reached by going forward at least 0 spaces
@@ -368,7 +380,7 @@
 ;; is this space a utility?
 ;; index -> boolean
 (define (utility-space? posn)
-  (utility? (hash-ref SPACEMAP posn #f)))
+  (utility? (hash-ref SPACEMAP posn)))
 
 ;; a list of the posns that are railroad spaces
 (define UTILITY-SPACES
@@ -387,6 +399,14 @@
 (check-equal? (next-utility 12) 12)
 (check-equal? (next-utility 13) 28)
 (check-equal? (next-utility 35) 12)
+
+;; the amount of money gained by mortgaging a property
+(define (mortgage-amt posn)
+  (* (posn-list-price posn) 1/2))
+
+;; the amount of money it costs to un-mortgage a property
+(define (un-mortgage-amt posn)
+  (* (posn-list-price posn) 6/10))
 
 ;; a map from colors to the spaces of that color
 (define COLORMAP
@@ -606,10 +626,8 @@
   (define gs2
     (update-gamestate-player
      player-id (player-change-cash (- (posn-list-price posn)))
-     (update-gamestate-prmap
-      (lambda (prmap)
-        (hash-safe-set prmap posn 
-                       (property-state player-id 0)))
+     (update-gamestate-property
+      posn (lambda (property) (property-state player-id 0))
       gs)))
   (display (~a "player "(id-v player-id)" purchases "(space-name posn)".\n"))
   (when (and (property? (hash-ref SPACEMAP posn))
@@ -626,14 +644,10 @@
   (update-gamestate-player
    owner
    (player-change-cash (- (property-house-cost (hash-ref SPACEMAP posn))))
-   (update-gamestate-prmap
-    (lambda (prmap)
-      (match-define (struct property-state (pr-owner houses))
-        (hash-ref prmap posn))
-      (unless (equal? owner pr-owner)
-        (raise-argument-error 'buy-house (~a "owner of property "posn)
-                              0 owner posn state))
-      (hash-set prmap posn (property-state owner (add1 houses))))
+   (update-gamestate-property
+    posn (lambda (property)
+           (match-define (struct property-state (pr-owner houses)) property)
+           (property-state owner (add1 houses)))
     state)))
 
 ;; a hash-set where the old val must be #f
@@ -810,7 +824,45 @@
 
 ;; ACTIONS
 
-#;(define (mortgage-property id posn state))
+;; is it legal for this player to mortgage this property?
+(define (can-mortgage-property? id posn state)
+  (define ps (hash-ref (gamestate-property-map state) posn #f))
+  (and ps
+       (equal? (property-state-owner ps) id)
+       (equal? (property-state-houses ps) 0)))
+
+;; change the 'houses' field to 'mortgaged, credit the player for the cash
+;; assumes the player owns the property
+(define (mortgage-property id posn state)
+  (update-gamestate-property
+   posn
+   (lambda (property)
+     (property-state (property-state-owner property)
+                     'mortgaged))
+   (update-gamestate-player
+    id (player-change-cash (mortgage-amt posn))
+    state)))
+
+;; is it legal for this player to unmortgage this property?
+;; is it legal for this player to mortgage this property?
+(define (can-un-mortgage-property? id posn state)
+  (define ps (hash-ref (gamestate-property-map state) posn #f))
+  (define p (hash-ref (gamestate-player-map state) id))
+  (and ps
+       (equal? (property-state-owner ps) id)
+       (equal? (property-state-houses ps) 'mortgaged)
+       (<= (un-mortgage-amt posn) (player-cash p))))
+
+;; change the 'houses' field back to zero, charge the player cash
+;; assumes the property is mortgaged, and the player has the cash
+(define (un-mortgage-property id posn state)
+  (update-gamestate-property
+   posn
+   (lambda (property)
+     (property-state (property-state-owner property) 0))
+   (update-gamestate-player
+    id (player-change-cash (- (* (property-list-price (hash-ref SPACEMAP posn)) 6/10)))
+    state)))
 
 
 ;; change the player's cash
