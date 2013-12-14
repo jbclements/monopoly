@@ -853,27 +853,29 @@
     state)))
 
 
-;; UNTESTED!
 ;; can this player buy a house on this property?
 ;; id posn gamestate -> boolean
 (define (can-buy-house? owner posn state)
   (define ps (hash-ref (gamestate-property-map state) posn #f))
-  (define p (hash-ref (gamestate-player-map state) id))
+  (define p (hash-ref (gamestate-player-map state) owner))
   (define prop (hash-ref SPACEMAP posn))
   (and (property? prop)
-       (equal? (property-state-owner ps) id)
+       (equal? (property-state-owner ps) owner)
        (let ()
          (define other-props
-           (remove (properties-of-color (property-color prop)) posn))
+           (remove posn (properties-of-color (property-color prop))))
          (define houses-on-this-property (property-state-houses ps))
          (and (not (eq? houses-on-this-property 'mortgaged))
               (for/and ([posn other-props])
-                (define houses-on-that-property 
-                  (property-state-houses (hash-ref (gamestate-property-map state)
-                                                   posn)))
-                (and (not (eq? houses-on-that-property 'mortgaged)
-                          (<= houses-on-this-property 
-                              houses-on-that-property))))))))
+                (define that-property-state
+                  (hash-ref (gamestate-property-map state)
+                            posn #f))
+                (and that-property-state
+                     (equal? owner (property-state-owner that-property-state))
+                     (not (eq? (property-state-houses that-property-state) 'mortgaged))
+                     (<= houses-on-this-property 
+                              (property-state-houses that-property-state))))))))
+
 
 ;; buy a house. assume it's possible
 ;; id posn gamestate -> gamestate
@@ -887,6 +889,32 @@
            (match-define (struct property-state (pr-owner houses)) property)
            (property-state owner (add1 houses)))
     state)))
+
+;; can a player sell a house on this property?
+;; id posn gamestate -> boolean
+(define (can-sell-house? owner posn state)
+  (define ps (hash-ref (gamestate-property-map state) posn #f))
+  (define p (hash-ref (gamestate-player-map state) owner))
+  (define prop (hash-ref SPACEMAP posn))
+  (and (property? prop)
+       (equal? (property-state-owner ps) owner)
+       (let ()
+         (define houses-on-this-property (property-state-houses ps))
+         (define other-props
+           (remove posn (properties-of-color (property-color prop))))
+         (and (not (eq? houses-on-this-property 'mortgaged))
+              (< 0 houses-on-this-property)
+              (for/and ([posn other-props])
+                ;; need to check owner or not?
+                ;; no, it looks like it's okay if someone else owns it.
+                (define that-property-state
+                  (hash-ref (gamestate-property-map state)
+                            posn #f))
+                (and that-property-state
+                     (equal? owner (property-state-owner that-property-state))
+                     (not (eq? (property-state-houses that-property-state) 'mortgaged))
+                     (<= houses-on-this-property 
+                         (property-state-houses that-property-state))))))))
 
 
 
@@ -944,3 +972,5 @@
   (gamestate id-vec turn player-map (make-prmap prmap) init-card-decks))
 
 
+
+ 

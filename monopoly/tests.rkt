@@ -645,15 +645,7 @@
                                             26 (id 4))))
               false)
 
-(check-equal? (buy-house (id 0) 31
-                         (gamestate (vector (id 0)) 1
-                                    (hash (id 0) (player 13 1234 #f))
-                                    (hash 31 (property-state (id 0) 1))
-                                    (list empty empty)))
-              (gamestate (vector (id 0)) 1
-                         (hash (id 0) (player 13 (- 1234 200) #f))
-                         (hash 31 (property-state (id 0) 2))
-                         (list empty empty)))
+
 
 (check-equal? (properties-of-color 'red)
               (list 21 23 24))
@@ -763,6 +755,92 @@
                                   21 (property-state (id 0) 0))
                             (list empty empty))
                 )
+  ;; BUYING HOUSES
+  
+  (check-equal? (buy-house (id 0) 31
+                         (gamestate (vector (id 0)) 1
+                                    (hash (id 0) (player 13 1234 #f))
+                                    (hash 31 (property-state (id 0) 1))
+                                    (list empty empty)))
+              (gamestate (vector (id 0)) 1
+                         (hash (id 0) (player 13 (- 1234 200) #f))
+                         (hash 31 (property-state (id 0) 2))
+                         (list empty empty)))
+  
+  
+;; two properties in the monopoly are unowned
+ (check-equal? (can-buy-house? (id 0) 31
+                         (gamestate (vector (id 0)) 1
+                                    (hash (id 0) (player 13 1234 #f))
+                                    (hash 31 (property-state (id 0) 1))
+                                    (list empty empty)))
+               #f)
+;; wrong owner on one property:
+(check-equal? (can-buy-house? (id 0) 31
+                         (gamestate (vector (id 0)) 1
+                                    (hash (id 0) (player 13 1234 #f))
+                                    (hash 31 (property-state (id 0) 1)
+                                          32 (property-state (id 1) 1)
+                                          34 (property-state (id 0) 1))
+                                    (list empty empty)))
+               #f)
+;; this property has more houses than another
+(check-equal? (can-buy-house? (id 0) 31
+                         (gamestate (vector (id 0)) 1
+                                    (hash (id 0) (player 13 1234 #f))
+                                    (hash 31 (property-state (id 0) 1)
+                                          32 (property-state (id 0) 0)
+                                          34 (property-state (id 0) 1))
+                                    (list empty empty)))
+               #f)
+  
+  ;; now it works
+  (check-equal? (can-buy-house? (id 0) 31
+                                (gamestate (vector (id 0)) 1
+                                           (hash (id 0) (player 13 1234 #f))
+                                           (hash 31 (property-state (id 0) 1)
+                                                 32 (property-state (id 0) 1)
+                                                 34 (property-state (id 0) 1))
+                                           (list empty empty)))
+                #t)
+
+  ;; CAN-SELL-HOUSE
+  
+  (check-equal? (can-sell-house? (id 0) 31
+                                (gamestate (vector (id 0)) 1
+                                           (hash (id 0) (player 13 1234 #f))
+                                           (hash 31 (property-state (id 0) 1)
+                                                 32 (property-state (id 0) 1)
+                                                 34 (property-state (id 0) 1))
+                                           (list empty empty)))
+                #t)
+  
+    (check-equal? (can-sell-house? (id 0) 31
+                                (gamestate (vector (id 0)) 1
+                                           (hash (id 0) (player 13 1234 #f))
+                                           (hash 31 (property-state (id 0) 1)
+                                                 32 (property-state (id 0) 2)
+                                                 34 (property-state (id 0) 2))
+                                           (list empty empty)))
+                #f)
+  
+  (check-equal? (can-sell-house? (id 0) 31
+                                (gamestate (vector (id 0)) 1
+                                           (hash (id 0) (player 13 1234 #f))
+                                           (hash 31 (property-state (id 0) 'mortgaged)
+                                                 32 (property-state (id 0) 1)
+                                                 34 (property-state (id 0) 1))
+                                           (list empty empty)))
+                #f)
+  
+  (check-equal? (can-sell-house? (id 0) 31
+                                (gamestate (vector (id 0)) 1
+                                           (hash (id 0) (player 13 1234 #f))
+                                           (hash 31 (property-state (id 0) 0)
+                                                 32 (property-state (id 0) 1)
+                                                 34 (property-state (id 0) 1))
+                                           (list empty empty)))
+                #f)
   
   
   )))
