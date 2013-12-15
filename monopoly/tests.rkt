@@ -803,6 +803,16 @@
                                                  34 (property-state (id 0) 1))
                                            (list empty empty)))
                 #t)
+  
+  ;; but not one is mortgaged
+  (check-equal? (can-buy-house? (id 0) 31
+                                (gamestate (vector (id 0)) 1
+                                           (hash (id 0) (player 13 1234 #f))
+                                           (hash 31 (property-state (id 0) 0)
+                                                 32 (property-state (id 0) 0)
+                                                 34 (property-state (id 0) 'mortgaged))
+                                           (list empty empty)))
+                #f)
 
   ;; CAN-SELL-HOUSE
   
@@ -815,6 +825,7 @@
                                            (list empty empty)))
                 #t)
   
+  ;; can't sell, must sell from 32 & 34 first
     (check-equal? (can-sell-house? (id 0) 31
                                 (gamestate (vector (id 0)) 1
                                            (hash (id 0) (player 13 1234 #f))

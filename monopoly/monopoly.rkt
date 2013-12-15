@@ -872,9 +872,9 @@
                             posn #f))
                 (and that-property-state
                      (equal? owner (property-state-owner that-property-state))
-                     (not (eq? (property-state-houses that-property-state) 'mortgaged))
+                     (not (eq? 'mortgaged (property-state-houses that-property-state)))
                      (<= houses-on-this-property 
-                              (property-state-houses that-property-state))))))))
+                         (property-state-houses that-property-state))))))))
 
 
 ;; buy a house. assume it's possible
