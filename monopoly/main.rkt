@@ -2,9 +2,10 @@
 
 (require "monopoly.rkt"
          "tests.rkt"
-         "monopoly-plot-posns.rkt")
+         "monopoly-plot-posns.rkt"
+         rackunit/text-ui)
 
-
+;(run-tests the-test-suite)
 
 (printf "\nstarting game!\n\n")
 

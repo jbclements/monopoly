@@ -615,6 +615,7 @@
             (player-cash player))
          (buy-property state)]
         [else
+         (error 'maybe-buy-property "out of money!")
          state]))
 
 ;; buy the property for the player, decreasing cash by the property's list price
