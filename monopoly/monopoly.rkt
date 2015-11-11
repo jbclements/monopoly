@@ -906,15 +906,13 @@
          (and (not (eq? houses-on-this-property 'mortgaged))
               (< 0 houses-on-this-property)
               (for/and ([posn other-props])
-                ;; need to check owner or not?
-                ;; no, it looks like it's okay if someone else owns it.
                 (define that-property-state
                   (hash-ref (gamestate-property-map state)
                             posn #f))
                 (and that-property-state
                      (equal? owner (property-state-owner that-property-state))
                      (not (eq? (property-state-houses that-property-state) 'mortgaged))
-                     (<= houses-on-this-property 
+                     (>= houses-on-this-property 
                          (property-state-houses that-property-state))))))))
 
 
